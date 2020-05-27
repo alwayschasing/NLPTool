@@ -261,7 +261,7 @@ def create_model(model_config,
         # loss = cosine_loss(keyword_representation, text_representation)
         normalize_a = tf.math.l2_normalize(keyword_representation,axis=-1)
         normalize_b = tf.math.l2_normalize(text_representation,axis=-1)
-        loss = tf.reduce_mean(tf.losses.cosine_distance(normalize_a, normalize_b, axis=-1))
+        loss = tf.reduce_sum(tf.losses.cosine_distance(normalize_a, normalize_b, axis=-1))
         return (loss, text_representation, keyword_probs)  
 
 
@@ -523,11 +523,16 @@ def main(_):
                 sorted_keyword_probs = np.argsort(keyword_probs, axis=-1)
                 top_keyword_ids = []
                 top_keyword_probs = []
-                for i, idx in enumerate(sorted_keyword_probs):
+                for i in range(-1,-6,-1):
+                    idx = sorted_keyword_probs[i]
                     top_keyword_ids.append(input_ids[idx])
                     top_keyword_probs.append(keyword_probs[idx])
-                    if i >= 5:
-                        break
+                    
+                #for i, idx in enumerate(sorted_keyword_probs):
+                #    top_keyword_ids.append(input_ids[idx])
+                #    top_keyword_probs.append(keyword_probs[idx])
+                #    if i >= 5:
+                #        break
                 top_keywords = tokenizer.convert_ids_to_tokens(top_keyword_ids)
                 output_line = "\t".join(kw + ":" + str(prob) for kw,prob in zip(top_keywords, top_keyword_probs)) + "\n"
                 writer.write(output_line)

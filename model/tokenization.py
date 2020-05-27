@@ -4,6 +4,7 @@ import jieba
 import collections
 import tensorflow as tf
 import six
+import csv
 
 
 def convert_to_unicode(text):
@@ -100,7 +101,7 @@ class Tokenizer(object):
     def tokenize(self,text):
         split_tokens = []
         text = text.strip()
-        words = jieba.lcut(text)
+        words = jieba.cut(text)
         useful_words = self.filter_stop_words(words)
         return useful_words
 
@@ -108,6 +109,7 @@ class Tokenizer(object):
         useful_words = []
         for w in words_list:
             if w in self.stop_words:
+                print(w.encode("utf-8").decode("unicode_escape"))
                 continue
             useful_words.append(w)
         return useful_words
@@ -118,3 +120,37 @@ class Tokenizer(object):
     def convert_ids_to_tokens(self, ids):
         return convert_by_vocab(self.inv_vocab, ids)
 
+
+if __name__ == "__main__":
+    vocab_file = "/search/odin/liruihong/word2vec_embedding/70000-small.txt"
+    stop_words_file = "/search/odin/liruihong/word2vec_embedding/cn_stopwords.txt"
+    tokenizer = Tokenizer(vocab_file, stop_words_file)
+    test_file = "/search/odin/liruihong/article_data/article_test"
+    res_file = "test_res"
+    # fp = open(test_file,"r", encoding="utf-8") 
+    fp = tf.gfile.GFile(test_file, "r")
+    reader = csv.reader(fp, delimiter="\t", quotechar=None)
+    wfp = open(res_file, "w", encoding="utf-8")
+    # lines = fp.readlines()
+    lines = []
+    for line in reader:
+        # print(line)
+        lines.append(line)
+    for idx,line in enumerate(lines):
+        print(type(line))
+        line = line[0]
+        if idx > 10:
+            break
+        line = convert_to_unicode(line)
+        line_words = tokenizer.tokenize(line)
+        #print(line_words)
+        res_line = "#".join(line_words) + "\n"
+        ids = tokenizer.convert_tokens_to_ids(line_words) 
+        words = tokenizer.convert_ids_to_tokens(ids)
+        ids = [str(id) for id in ids]
+        ids_line = "#".join(ids) + "\n"
+        words_line = "#".join(words) + "\n"
+        wfp.write(res_line)
+        wfp.write(ids_line)
+        wfp.write(words_line)
+    wfp.close()

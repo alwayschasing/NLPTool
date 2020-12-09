@@ -2,3 +2,5 @@ data_preprocess/*
 datasets/*
 log*
 model_output/*
+*/__pycache__/*
+*log*

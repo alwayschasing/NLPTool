@@ -8,12 +8,13 @@ python keyword_pretraining.py \
     --vocab_file="/search/odin/liruihong/word2vec_embedding/2000000-small.txt" \
     --stop_words_file="/search/odin/liruihong/word2vec_embedding/cn_stopwords.txt" \
     --embedding_table="/search/odin/liruihong/word2vec_embedding/2000000-small.txt" \
-    --output_dir="/search/odin/liruihong/NLPTool/model_output/article_2d.epoch2" \
+    --use_pos=True \
+    --output_dir="/search/odin/liruihong/NLPTool/model_output/article2d_small_epoch2_test" \
     --embedding_table_trainable=False \
     --embedding_size=200 \
     --max_seq_length=256 \
     --save_checkpoint_steps=2000 \
     --do_train=True \
-    --train_data="/search/odin/liruihong/NLPTool/datasets/article_2d.tfrecord" \
-    --num_warmup_steps=100 \
+    --train_data="/search/odin/liruihong/NLPTool/datasets/article2d_pos.tfrecord" \
+    --num_warmup_steps=1000 \
     --num_train_steps=20000

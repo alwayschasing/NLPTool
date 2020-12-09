@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*-encoding=utf-8-*-
 import jieba
+from jieba import posseg as pseg
 import collections
 import tensorflow as tf
 import six
@@ -59,7 +60,9 @@ def load_vocab(word_vocab_file, skip_head=True):
             if skip_head:
                 skip_head = False
                 continue
-            token = token.strip().split(' ')[0]
+            token = token.rstrip('\n').split(' ')[0]
+            if token in vocab:
+                tf.logging.error("duplicate token:#%s#"%(token))
             vocab[token] = index
             index += 1
     tf.logging.info("vocab max index:%d"%(index-1))
@@ -89,7 +92,10 @@ def convert_by_vocab(vocab, items):
 
 
 class Tokenizer(object):
-    def __init__(self, vocab_file, stop_words_file=None):
+    def __init__(self, vocab_file, stop_words_file=None, use_pos=False):
+        """
+        use_pos:是否使用词性特征
+        """
         self.vocab = load_vocab(vocab_file)
         self.inv_vocab = {v: k for k, v in self.vocab.items()}
         if stop_words_file is None:
@@ -97,25 +103,45 @@ class Tokenizer(object):
         else:
             self.stop_words = load_stop_words(stop_words_file)
         self.vocab_size = len(self.vocab)
+        self.use_pos = use_pos
+        self.pos_dict = set(["nr","n","ns","nt","nz"])
 
     def tokenize(self,text):
         split_tokens = []
         text = text.strip()
-        words = jieba.cut(text)
-        useful_words = self.filter_stop_words(words)
-        return useful_words
+        if self.use_pos == False:
+            words = jieba.cut(text)
+            words = [w for w in words]
+            pos_list = [1]*len(words)
+        else:
+            words_pos = pseg.cut(text)
+            words_pos = [(w,p) for w,p in words_pos]
+            pos_list = [1 if p in self.pos_dict else 0 for x,p in words_pos]
+            words = [w for w,p in words_pos]
+        assert len(words) == len(pos_list)
+        useful_words, useful_pos = self.filter_stop_words(words, pos_list)
+        assert len(useful_words) == len(useful_pos)
+        return useful_words,useful_pos
 
-    def filter_stop_words(self,words_list):
+    def filter_stop_words(self,words_list, pos_list):
         useful_words = []
-        for w in words_list:
+        useful_pos = []
+        for idx, w in enumerate(words_list):
             if w in self.stop_words:
-                print(w.encode("utf-8").decode("unicode_escape"))
+                # print(w.encode("utf-8").decode("unicode_escape"))
                 continue
             useful_words.append(w)
-        return useful_words
+            useful_pos.append(pos_list[idx])
+        return useful_words, useful_pos
 
-    def convert_tokens_to_ids(self, tokens):
-        return convert_by_vocab(self.vocab, tokens)
+    def convert_tokens_to_ids(self, tokens, pos=None):
+        output = []
+        pos_mask = []
+        for idx,item in enumerate(tokens):
+            if item in self.vocab:
+                output.append(self.vocab[item])
+                pos_mask.append(pos[idx])
+        return output, pos_mask
 
     def convert_ids_to_tokens(self, ids):
         return convert_by_vocab(self.inv_vocab, ids)

@@ -9,6 +9,8 @@ from util import data_util
 
 flags = tf.flags
 FLAGS = flags.FLAGS
+
+flags.DEFINE_string("type", "kw", "create data type")
 flags.DEFINE_string("input_file", None,
                     "Input raw text file (or comma-separated list of files).")
 
@@ -24,10 +26,24 @@ flags.DEFINE_string("stop_words_file", None,
 
 flags.DEFINE_integer("max_seq_length", None, "max_seq_length")
 
-def main(_):
+def create_pairtexts_data():
+    tokenizer = tokenization.Tokenizer(
+        vocab_file=FLAGS.vocab_file, stop_words_file=FLAGS.stop_words_file, use_pos=False)
+    input_files_all = FLAGS.input_file  
+    input_files = input_files_all.split('#')
+    train_examples = []
+    for input_file in input_files:
+        tmp_examples = data_util.create_pairexamples_from_tsv_file(input_file)
+        train_examples.extend(tmp_examples)
+    train_file = FLAGS.output_file
+    data_util.file_based_convert_pairexamples_to_features(
+        train_examples, FLAGS.max_seq_length, tokenizer, train_file)
+
+
+def create_keyword_data():
     label_list = ["1","2"]
     tokenizer = tokenization.Tokenizer(
-        vocab_file=FLAGS.vocab_file, stop_words_file=FLAGS.stop_words_file)
+        vocab_file=FLAGS.vocab_file, stop_words_file=FLAGS.stop_words_file, use_pos=True)
     input_files_all = FLAGS.input_file  
     input_files = input_files_all.split('#')
     train_examples = []
@@ -37,6 +53,25 @@ def main(_):
     train_file = FLAGS.output_file
     data_util.file_based_convert_examples_to_features(
         train_examples, label_list, FLAGS.max_seq_length, tokenizer, train_file)
+
+
+def main(_):
+    #label_list = ["1","2"]
+    #tokenizer = tokenization.Tokenizer(
+    #    vocab_file=FLAGS.vocab_file, stop_words_file=FLAGS.stop_words_file, use_pos=True)
+    #input_files_all = FLAGS.input_file  
+    #input_files = input_files_all.split('#')
+    #train_examples = []
+    #for input_file in input_files:
+    #    tmp_examples = data_util.create_examples_from_json_file(input_file)
+    #    train_examples.extend(tmp_examples)
+    #train_file = FLAGS.output_file
+    #data_util.file_based_convert_examples_to_features(
+    #    train_examples, label_list, FLAGS.max_seq_length, tokenizer, train_file)
+    if FLAGS.type == "pair":
+        create_pairtexts_data()
+    elif FLAGS.type == "kw":
+        create_keyword_data()
 
 
 if __name__ == "__main__":

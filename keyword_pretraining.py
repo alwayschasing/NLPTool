@@ -12,6 +12,7 @@ from model import tokenization
 from model import optimization
 from model.util import create_initializer
 from model.util import get_shape_list
+from model.util import get_assignment_map_from_checkpoint
 from util.data_util import InputExample 
 from util.data_util import InputFeatures
 from util.data_util import TextProcessor
@@ -49,6 +50,7 @@ flags.DEFINE_integer("save_checkpoint_steps", 1000, "save_checkpoint_steps")
 flags.DEFINE_string("train_data",None,"train_data")
 flags.DEFINE_string("eval_data",None,"eval_data")
 flags.DEFINE_string("pred_data",None,"pred_data")
+flags.DEFINE_bool("use_pos",False,"whether use part of speech feature")
 
 
 def file_based_input_fn_builder(input_file, seq_length, is_training,
@@ -58,6 +60,7 @@ def file_based_input_fn_builder(input_file, seq_length, is_training,
     name_to_features = {
         "input_ids": tf.FixedLenFeature([seq_length], tf.int64),
         "input_mask": tf.FixedLenFeature([seq_length], tf.int64),
+        "keyword_mask": tf.FixedLenFeature([seq_length], tf.int64),
         "segment_ids": tf.FixedLenFeature([seq_length], tf.int64),
         "label_ids": tf.FixedLenFeature([], tf.int64),
     }
@@ -184,6 +187,7 @@ def create_model(model_config,
                  is_training,
                  input_ids,
                  input_mask,
+                 keyword_mask,
                  segment_ids,
                  embedding_table=None,
                  hidden_dropout_prob=0.1,
@@ -242,6 +246,8 @@ def create_model(model_config,
     # keyword_scores shape: [batch_size, seq_length]
     mask_adder = (1.0 - tf.cast(input_mask, tf.float32)) * -10000.0
     keyword_scores += mask_adder
+    kw_mask_adder = (1.0 - tf.cast(keyword_mask, tf.float32))*-10.0
+    keyword_scores += kw_mask_adder
     keyword_probs = tf.nn.softmax(keyword_scores)
     tf.logging.info("mask_adder shape:%s"%(get_shape_list(mask_adder)))
     tf.logging.info("keyword_probs shape:%s"%(get_shape_list(mask_adder)))
@@ -250,18 +256,33 @@ def create_model(model_config,
     onehot_vec = tf.one_hot(keyword_idx, depth=model_config.max_seq_length) # [batch_size, seq_length, 1]
     onehot_vec_shape = get_shape_list(onehot_vec)
     tf.logging.info("onehot_vec_shape:%s"%(onehot_vec_shape))
-    keyword_weight = tf.reshape(onehot_vec, [batch_size, seq_length , 1])
+    keyword_weight = tf.reshape(onehot_vec, [batch_size, seq_length, 1])
     keyword_vec = tf.reduce_sum(keyword_weight * sequence_output, axis=1)
     tf.logging.info("kwyword_vec shape:%s"%(get_shape_list(keyword_vec)))
 
+    negword_idx = tf.random.uniform(shape=[batch_size,1], minval=0, maxval=model_config.max_seq_length, dtype=tf.int32)
+    negword_weights = tf.reshape(tf.one_hot(negword_idx, depth=model_config.max_seq_length), [batch_size, seq_length, 1])
+    neg_vec_1 = tf.reduce_sum(negword_weights*sequence_output, axis=1)
+
+
+    negword_idx = tf.random.uniform(shape=[batch_size,1], minval=0, maxval=model_config.max_seq_length, dtype=tf.int32)
+    negword_weights = tf.reshape(tf.one_hot(negword_idx, depth=model_config.max_seq_length), [batch_size, seq_length, 1])
+    neg_vec_2 = tf.reduce_sum(negword_weights*sequence_output, axis=1)
+    
+
     with tf.variable_scope("loss"):
         keyword_representation = keyword_vec
+        negword_representation = (neg_vec_1 + neg_vec_2)/2
         text_representation = tf.reduce_mean(sequence_output, axis=1)
         # cosine_loss = tf.keras.losses.CosineSimilarity(axis=-1)
         # loss = cosine_loss(keyword_representation, text_representation)
         normalize_a = tf.math.l2_normalize(keyword_representation,axis=-1)
         normalize_b = tf.math.l2_normalize(text_representation,axis=-1)
-        loss = tf.reduce_sum(tf.losses.cosine_distance(normalize_a, normalize_b, axis=-1))
+        normalize_c = tf.math.l2_normalize(negword_representation,axis=-1)
+        
+        loss_1 = tf.reduce_sum(tf.losses.cosine_distance(normalize_a, normalize_b, axis=-1))
+        loss_2 = -tf.reduce_sum(tf.losses.cosine_distance(normalize_b, normalize_b, axis=-1))
+        loss = loss_1 + loss_2
         return (loss, text_representation, keyword_probs)  
 
 
@@ -281,6 +302,7 @@ def model_fn_builder(model_config,
             tf.logging.info("  name = %s, shape = %s" % (name, features[name].shape))
         input_ids = features["input_ids"]
         input_mask = features["input_mask"]
+        keyword_mask = features["keyword_mask"]
         segment_ids = features["segment_ids"]
         label_ids = features["label_ids"]
 
@@ -302,6 +324,7 @@ def model_fn_builder(model_config,
                                                                        is_training,
                                                                        input_ids,
                                                                        input_mask,
+                                                                       keyword_mask,
                                                                        segment_ids,
                                                                        embedding_table)
 
@@ -310,7 +333,7 @@ def model_fn_builder(model_config,
 
         if init_checkpoint:
             (assignment_map, initialized_variable_names
-             ) = modeling.get_assignment_map_from_checkpoint(tvars, init_checkpoint)
+             ) = get_assignment_map_from_checkpoint(tvars, init_checkpoint)
             tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
 
         tf.logging.info("**** Trainable Variables ****")
@@ -402,7 +425,8 @@ def main(_):
     label_list = processor.get_labels()
 
     tokenizer = tokenization.Tokenizer(
-        vocab_file=FLAGS.vocab_file, stop_words_file=FLAGS.stop_words_file)
+        vocab_file=FLAGS.vocab_file, stop_words_file=FLAGS.stop_words_file, use_pos=FLAGS.use_pos)
+    tf.logging.info("model_config vocab_size:%d, tokenizer.vocab_size:%d"%(model_config.vocab_size, tokenizer.vocab_size))
     assert(model_config.vocab_size == tokenizer.vocab_size)
 
     if FLAGS.embedding_table is not None:
@@ -546,7 +570,7 @@ def main(_):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO,format="[%(asctime)s-%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     flags.mark_flag_as_required("config_file")
     flags.mark_flag_as_required("output_dir")
     flags.mark_flag_as_required("vocab_file")

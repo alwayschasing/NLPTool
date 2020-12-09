@@ -281,7 +281,7 @@ def create_model(model_config,
         normalize_c = tf.math.l2_normalize(negword_representation,axis=-1)
         
         loss_1 = tf.reduce_sum(tf.losses.cosine_distance(normalize_a, normalize_b, axis=-1))
-        loss_2 = -tf.reduce_sum(tf.losses.cosine_distance(normalize_b, normalize_b, axis=-1))
+        loss_2 = -tf.reduce_sum(tf.losses.cosine_distance(normalize_a, normalize_c, axis=-1))
         loss = loss_1 + loss_2
         return (loss, text_representation, keyword_probs)  
 
